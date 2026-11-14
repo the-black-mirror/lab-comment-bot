@@ -1,0 +1,41 @@
+name: Lab docbot (vulnerable pattern)
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  docbot:
+    # Same shape as the pattern under test: PR comment + prefix, no author check.
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '@docbot')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Resolve PR head branch (by name, like the original)
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.BOT_PAT }}
+        run: |
+          BRANCH=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" --jq .head.ref)
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "commenter=${{ github.event.comment.user.login }} association=${{ github.event.comment.author_association }} branch=$BRANCH"
+
+      - name: Checkout by branch name with the PAT
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BOT_PAT }}
+          ref: ${{ steps.pr.outputs.branch }}
+
+      - name: Fixed edit standing in for the LLM rewrite
+        run: |
+          echo "docbot edit requested by ${{ github.event.comment.user.login }} at $(date -u +%FT%TZ)" >> README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "DocSync lab: update README from comment"
+          echo "pushing to: $(git rev-parse --abbrev-ref HEAD) in $(git remote get-url origin | sed 's#https://[^@]*@#https://#')"
+          git push origin HEAD
